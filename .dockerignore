@@ -1,0 +1,5 @@
+./.pytest_cache
+./.vscode
+./coverage_report
+./env
+./.venv

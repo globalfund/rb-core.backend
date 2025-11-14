@@ -1,0 +1,27 @@
+[project]
+name = "rb-core-backend"
+version = "0.1.0"
+description = "The Global Fund - Report Builder Core - Backend"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "chardet>=5.2.0",
+    "dotenv>=0.9.9",
+    "pandas<2.3.0",
+    "pymongo>=4.15.3",
+    "python-magic>=0.4.27",
+    "requests>=2.32.5",
+    "sqlalchemy>=2.0.44",
+]
+
+[dependency-groups]
+dev = [
+    "black>=25.11.0",
+    "flake8>=7.3.0",
+    "isort>=7.0.0",
+    "trufflehog>=2.2.1",
+]
+
+[tool.setuptools.packages.find]
+include = ["rb_core_backend*"]
+exclude = ["dev*", "data*", "logging*", "staging*"]
