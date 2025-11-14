@@ -288,7 +288,7 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
             file_dataset["name"] = file_dataset["name"] + " - " + cleaned_name
             logger.debug(f"KAGGLE:: {file_dataset}")
             ds_id = external_dataset["id"]
-            ds_name = f"ds{ds_id}.csv"
+            ds_name = f"{ds_id}.csv"
             try:
                 os.rename(f"./staging/{name}", f"./staging/{ds_name}")
             except Exception:
