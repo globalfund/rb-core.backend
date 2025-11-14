@@ -1,6 +1,6 @@
 [project]
 name = "rb-core-backend"
-version = "0.1.0"
+version = "0.1.1"
 description = "The Global Fund - Report Builder Core - Backend"
 readme = "README.md"
 requires-python = ">=3.11"

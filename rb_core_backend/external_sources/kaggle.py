@@ -6,10 +6,10 @@ import logging
 import os
 import re
 import subprocess
-from abc import ABC
 
 import pandas as pd
 
+from rb_core_backend.external_sources.model import ExternalSourceModel
 from rb_core_backend.external_sources.util import EXTERNAL_DATASET_FORMAT, EXTERNAL_DATASET_RESOURCE_FORMAT
 from rb_core_backend.mongo import RBCoreBackendMongo
 from rb_core_backend.preprocess_dataset import RBCoreDatasetPreprocessor
@@ -24,7 +24,7 @@ ITEMS_PER_PAGE = 20
 KAGGLE_SOURCE_NOTICE = "  - This Datasource was retrieved from https://www.kaggle.com/."
 
 
-class RBCoreExternalSourceKaggle(ABC):
+class RBCoreExternalSourceKaggle(ExternalSourceModel):
     """RB Core External Source Kaggle class for operations."""
 
     def __init__(
@@ -32,14 +32,8 @@ class RBCoreExternalSourceKaggle(ABC):
         mongo_client: RBCoreBackendMongo,
         dataset_preprocessor: RBCoreDatasetPreprocessor,
     ) -> None:
-        """Initialize the RBCoreExternalSourceKaggle class.
-
-        Args:
-            mongo_client (RBCoreBackendMongo): The MongoDB client to use for indexing.
-            dataset_preprocessor (RBCoreDatasetPreprocessor): The dataset preprocessor to use for processing downloaded datasets.
-        """  # NOQA: E501
-        self.mongo_client = mongo_client
-        self.dataset_preprocessor = dataset_preprocessor
+        """Initialize the RBCoreExternalSourceKaggle class."""
+        super().__init__(mongo_client, dataset_preprocessor)
 
     @profile_method
     def index(self, delete: bool = False) -> str:
@@ -157,7 +151,10 @@ class RBCoreExternalSourceKaggle(ABC):
             return f"Unable to get the metadata for {ref} from Kaggle, skipping."
         output = self._handle_update_log(output)
         # if the output does not start with Downloaded metadata to ./staging/, return an error
-        if "Downloaded metadata to ./rb_core_backend/external_sources/staging" not in output:
+        if (
+            "Downloaded metadata to ./rb_core_backend/external_sources/staging"
+            not in output
+        ):
             logger.error(
                 f"KAGGLE INDEX:: Error in _get_metadata - metadata is not found, maybe there is a kaggle update: {output}"  # NOQA: 501
             )  # NOQA: 501
