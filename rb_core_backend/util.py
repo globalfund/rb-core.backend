@@ -106,6 +106,25 @@ def setup_parsed_loc(ds_loc: str) -> str:
         return "./"
 
 
+@staticmethod
+def remove_files(file_names: list[str]) -> str:
+    """Remove files from the staging directory
+
+    Args:
+        file_names (list[str]): A list of file names to remove
+
+    Returns:
+        str: "Success" if files were removed, "Error removing files" otherwise
+    """
+    logger.debug(f"Removing files: {file_names}")
+    try:
+        for name in file_names:
+            os.remove(f"./staging/{name}")
+        return "Success"
+    except Exception:
+        return "Error removing files"
+
+
 DATE_FORMATS = [
     "%d %b %Y",  # d MMM yyyy
     "%d %b %Y %H:%M:%S",  # d MMM yyyy HH:mm:ss
