@@ -54,9 +54,10 @@ There are notes on the included data reader at [docs/read_data_notes](./docs/rea
 
 Project is managed and run with UV.
 
-Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-
-Run locally, for example the sample method in `rb_core_backend.preprocess_dataset`, with `uv run -m rb_core_backend.preprocess_dataset`
+- Install UV: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- Create a virtual environment: `uv venv`.
+- Install the dependencies: `uv pip install ".[dev]"`
+- Run locally, for example the sample method in `rb_core_backend.preprocess_dataset`, with `uv run -m rb_core_backend.preprocess_dataset`
 
 ### Usage of abstractmethod
 
@@ -92,3 +93,40 @@ class CustomValidator(BaseValidator):
 
         return True
 ```
+
+### Usage of Kaggle
+
+Install the kaggle CLI tool globally. `pip install -g kaggle` and set up your token as [per their guide](https://www.kaggle.com/docs/api)
+
+For kaggle, as mentioned we need to set up the kaggle token.
+Through docker, we copy it from the dx.backend root directory.
+Make sure to download it set up your token as [from your account](https://www.kaggle.com/settings/account), and place it in the root folder.
+
+### Code Management
+
+*flake8* is used to maintain code quality in pep8 style
+
+*isort* is used to maintain the imports
+
+*pre-commit* is used to enforce commit styles in the form:
+
+```bash
+feat: A new feature
+fix: A bug fix
+docs: Documentation only changes
+style: Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)
+refactor: A code change that neither fixes a bug nor adds a feature
+perf: A code change that improves performance
+test: Adding missing or correcting existing tests
+chore: Changes to the build process or auxiliary tools and libraries such as documentation generation
+```
+
+### Commits
+
+[Commitlint](https://github.com/conventional-changelog/commitlint#what-is-commitlint) is used to check your commit messages.
+
+When setting up the repository, after locally setting up an environment, ensure pre-commit is installed:
+
+- Add pre-commit: `uv add pre-commit` or `pip install pre-commit`.
+- Install pre-commit to git: `uv run pre-commit install` or `pre-commit install`.
+- Install the commit hook to git: `uv run pre-commit install --hook-type commit-msg` or `pre-commit install --hook-type commit-msg`.

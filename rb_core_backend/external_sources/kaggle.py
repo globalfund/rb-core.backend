@@ -66,7 +66,7 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
         logger.info("KAGGLE INDEX:: Kaggle index updated successfully")
         return f"Kaggle - Successfully indexed {n_success} out of {n_ds} dataset pages."
 
-    def _kaggle_index_page(self, i: int, existing_external_sources: list[dict]) -> str:
+    def _kaggle_index_page(self, i: int, existing_external_sources: dict) -> str:
         """Subfunction of kaggle index, where i is the page number
 
         Args:
@@ -93,7 +93,7 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
                 logger.error(
                     f"KAGGLE INDEX:: Error in kaggle_index - ref is not found, maybe there is a kaggle update: {output}"
                 )  # NOQA: 501
-                return []
+                return "continue"
 
             df = pd.read_csv(io.StringIO(output))
         except Exception as e:
@@ -185,13 +185,12 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
             )
             return f"Unable to get the filenames for {ref}, skipping"
 
+        external_dataset = copy.deepcopy(EXTERNAL_DATASET_FORMAT)
         if update:
             external_dataset = copy.deepcopy(update_item)
             external_dataset.pop("score", None)
             external_dataset["subCategories"] = []
             external_dataset["resources"] = []
-        else:
-            external_dataset = copy.deepcopy(EXTERNAL_DATASET_FORMAT)
 
         external_dataset["title"] = metadata.get("title", row["title"])
         external_dataset["description"] = (
@@ -307,7 +306,7 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
 
     def _get_filenames(
         self, ref: str, pretty=False
-    ) -> list[str] | tuple[list[str], list[str]]:
+    ) -> list[str] | tuple[list[str], list[str]] | str:
         """Get the filenames related to a kaggle dataset
 
         Args:

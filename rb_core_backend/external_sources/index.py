@@ -38,9 +38,7 @@ class RBCoreExternalSources(ABC):
 
             # Example implementation per source
             futures = {
-                source: executor.submit(
-                    actions["index"], mongo_client=self.mongo_client, delete=True
-                )
+                source: executor.submit(actions["index"], delete=True)
                 for source, actions in self.all_sources.items()
             }
 
@@ -72,7 +70,7 @@ class RBCoreExternalSources(ABC):
         Returns:
             str: A string indicating the result of the reindexing.
         """
-        self.all_sources[source]["index"](self.mongo_client, delete=True)
+        self.all_sources[source]["index"](delete=True)
 
         success = self.mongo_client.mongo_create_text_index_for_external_sources()
         if success:
@@ -135,7 +133,7 @@ class RBCoreExternalSources(ABC):
         This process should receive an external dataset object, and download
         to a staging folder. Then process the dataset. If anything fails, the
         dataset should be removed from the staging folder. This dataset is then
-        included in the DX Mongo datasets. Then, the dataset is to be processed as a standard DX dataset.
+        included in the Mongo datasets. Then, the dataset is to be processed as a standard dataset.
 
         Args:
             external_dataset (dict): An external dataset object
