@@ -286,7 +286,7 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
             file_dataset = external_dataset.copy()
             file_dataset["name"] = file_dataset["name"] + " - " + cleaned_name
             logger.debug(f"KAGGLE:: {file_dataset}")
-            ds_id = external_dataset["id"]
+            ds_id = external_dataset.get("id", f"kaggle-{ref}")
             ds_name = f"{ds_id}.csv"
             try:
                 os.rename(f"./staging/{name}", f"./staging/{ds_name}")
