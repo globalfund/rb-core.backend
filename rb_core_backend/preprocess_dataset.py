@@ -427,19 +427,23 @@ class RBCoreDatasetPreprocessor(ABC):
 
     @profile_method
     def _fillna_on_dtype(self) -> None:
-        """Fill NaN values in batches by dtype."""
+        """Fill NaN/NaT values in batches by dtype."""
+        # Scalar-dtype fills handled via select_dtypes
         fill_values = {
             "object": "",
-            "int64": 0,
-            "float64": 0.0,
-            "datetime64[ns]": pd.Timestamp("1970-01-01"),
+            "integer": 0,
+            "floating": 0.0,
         }
-
-        # Group columns by dtype and fill in batches
-        for dtype_str, fill_value in fill_values.items():
-            cols = self.df.select_dtypes(include=[dtype_str]).columns
+        for kind, fill_value in fill_values.items():
+            cols = self.df.select_dtypes(include=[kind]).columns
             if len(cols) > 0:
                 self.df[cols] = self.df[cols].fillna(fill_value)
+
+        # Datetime fill — must iterate because tz-aware and tz-naive can't be
+        # selected together and fillna on mixed-tz frames raises TypeError.
+        for col in self.df.columns:
+            if pd.api.types.is_datetime64_any_dtype(self.df[col]):
+                self.df[col] = self.df[col].fillna(pd.Timestamp("1970-01-01"))
 
     @profile_method
     def _find_almost_empty_row_index(self, threshold=0.9) -> int:

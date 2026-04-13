@@ -4,17 +4,30 @@ import os
 import re
 import shutil
 
+import numpy as np
 import pandas as pd
 
 from rb_core_backend.util import profile_method
 
 logger = logging.getLogger(__name__)
-RAW_DATA_TYPES = {  # Rawgraphs has date, string or number, default to string when using
-    "object": "string",
-    "datetime64[ns]": {"type": "date", "dateFormat": "YYYY-MM-DD"},
-    "int64": "number",
-    "float64": "number",
-}
+DATE_TYPE = {"type": "date", "dateFormat": "YYYY-MM-DD"}
+
+
+def _map_dtype_to_raw(dtype: np.dtype) -> str | dict:
+    """Map a pandas/numpy dtype to a Rawgraphs-compatible type string.
+
+    Covers the full range of numeric types that parquet preserves (uint*, int*, float*)
+    as well as datetime variants (tz-naive and tz-aware).
+    """
+    if pd.api.types.is_datetime64_any_dtype(dtype):
+        return DATE_TYPE
+    if pd.api.types.is_bool_dtype(dtype):
+        return "string"
+    if pd.api.types.is_integer_dtype(dtype):
+        return "number"
+    if pd.api.types.is_float_dtype(dtype):
+        return "number"
+    return "string"
 
 
 class RBCoreDataManagement:
@@ -61,17 +74,23 @@ class RBCoreDataManagement:
         loc = f"{self.df_loc}parsed-data-files/{filename}.json"
         sample_loc = f"{self.df_loc}sample-data-files/{filename}.json"
 
-        # 1. Map dtypes safely
-        data_types = {
-            col: RAW_DATA_TYPES.get(dtype.name, "string")
-            for col, dtype in df.dtypes.items()
-        }
+        # 1. Map dtypes — covers all int/float/bool/datetime variants from parquet
+        data_types = {col: _map_dtype_to_raw(dtype) for col, dtype in df.dtypes.items()}
 
-        # 2. Format datetimes to 'YYYY-MM-DD'
-        for col in df.select_dtypes(include=["datetime64[ns]"]).columns:
-            df[col] = df[col].dt.strftime("%Y-%m-%d")
+        # 2. Normalise numeric dtypes to int64/float64 so json.dump can serialise them.
+        #    Parquet preserves exact types (uint8, int32, float32, …) which are numpy
+        #    scalars and not natively JSON-serialisable.
+        for col in df.select_dtypes(include=[np.integer]).columns:
+            df[col] = df[col].astype("int64")
+        for col in df.select_dtypes(include=[np.floating]).columns:
+            df[col] = df[col].astype("float64")
 
-        # 3. Replace NaN with None for JSON serialization and export
+        # 3. Format all datetime columns (tz-naive and tz-aware) to 'YYYY-MM-DD'
+        for col in df.columns:
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                df[col] = df[col].dt.strftime("%Y-%m-%d")
+
+        # 4. Replace NaN/NaT/pd.NA with None for JSON serialization and export
         df = df.where(pd.notnull(df), None)
 
         # 4. Convert to list of dicts
