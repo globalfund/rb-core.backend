@@ -179,10 +179,14 @@ class RBCoreExternalSources(ABC):
         description = item.get("description", "").lower()
         logger.info("title: %s, description: %s", title, description)
         for q in query:
-            if q not in title and q not in description:
-                print("Q not in title or description:", q, title, description)
-                return False
-        return True
+            if q in title or q in description:
+                return True
+            for res in item.get("resources", []):
+                res_title = res.get("title", "").lower()
+                res_description = res.get("description", "").lower()
+                if q in res_title or q in res_description:
+                    return True
+        return False
 
     @staticmethod
     @profile_method
