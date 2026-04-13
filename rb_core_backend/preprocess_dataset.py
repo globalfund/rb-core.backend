@@ -114,6 +114,10 @@ class RBCoreDatasetPreprocessor(ABC):
             # Early type inference for better performance
             self._infer_objects()
 
+            # Flatten list/array columns (e.g. from parquet) to strings before
+            # any further processing, which assumes flat scalar values.
+            self._flatten_list_columns()
+
             # Strip metadata from input files.
             if options.strip_metadata:
                 self._strip_metadata()
@@ -151,6 +155,25 @@ class RBCoreDatasetPreprocessor(ABC):
             self.logger.error(f"Error in preprocess_data: {str(e)}")
             res = "Sorry, something went wrong in our dataset processing. Contact the admin for more information."
         return res
+
+    @profile_method
+    def _flatten_list_columns(self) -> None:
+        """Convert any column whose values are lists or numpy arrays to comma-separated strings.
+
+        Parquet (and some other binary formats) preserves native list types that pandas cannot
+        represent as flat scalars. All downstream steps such as date detection, numeric conversion,
+        value_counts in stats, and JSON serialisation assume scalar values, so this
+        normalisation must happen before any of them run.
+        """
+        for col in self.df.select_dtypes(include=["object"]).columns:
+            non_null = self.df[col].dropna()
+            if non_null.empty:
+                continue
+            if non_null.apply(lambda x: isinstance(x, (list, np.ndarray))).any():
+                self.df[col] = self.df[col].apply(
+                    lambda x: ", ".join(str(v) for v in x) if isinstance(x, (list, np.ndarray)) else x
+                )
+                self.logger.debug(f"Flattened list column: {col!r}")
 
     @profile_method
     def _preprocess_columns(self, options: PreprocessDataOptions) -> None:

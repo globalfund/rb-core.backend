@@ -9,6 +9,7 @@ dependencies = [
     "dotenv>=0.9.9",
     "kaggle>=1.8.3",
     "pandas<2.3.0",
+    "pyarrow>=23.0.1",
     "pymongo>=4.15.3",
     "python-magic>=0.4.27",
     "requests>=2.32.5",
