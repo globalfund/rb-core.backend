@@ -21,6 +21,14 @@ logger = logging.getLogger(__name__)
 RE_SUB = r"[^a-zA-Z0-9]"
 # Items returned per page on kaggle is 20
 ITEMS_PER_PAGE = 20
+# Kaggle lists at most 500 pages of datasets
+MAX_PAGES = 500
+# The dataset reference ends up in shell commands, so it has to be a plain owner/dataset slug.
+KAGGLE_REF_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+KAGGLE_DATASET_URL = "https://www.kaggle.com/datasets/"
+# Directory the metadata of a dataset is downloaded to while indexing.
+KAGGLE_METADATA_DIR = "./staging/kaggle-metadata"
+KAGGLE_DOWNLOAD_ERROR = "Sorry, we were unable to process the selected Kaggle dataset, please try a different dataset, or contact the administrator."  # NOQA: E501
 KAGGLE_SOURCE_NOTICE = "  - This Datasource was retrieved from https://www.kaggle.com/."
 
 
@@ -31,9 +39,18 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
         self,
         mongo_client: RBCoreBackendMongo,
         dataset_preprocessor: RBCoreDatasetPreprocessor,
+        index_max_pages: int = MAX_PAGES,
     ) -> None:
-        """Initialize the RBCoreExternalSourceKaggle class."""
+        """Initialize the RBCoreExternalSourceKaggle class.
+
+        Args:
+            mongo_client (RBCoreBackendMongo): The MongoDB client to use for indexing.
+            dataset_preprocessor (RBCoreDatasetPreprocessor): The preprocessor for downloaded datasets.
+            index_max_pages (int, optional): The number of pages of 20 datasets to index, most voted first.
+                Indexing requests the metadata and files of every dataset, so all 500 pages take hours.
+        """
         super().__init__(mongo_client, dataset_preprocessor)
+        self.index_max_pages = min(max(int(index_max_pages), 1), MAX_PAGES)
 
     @profile_method
     def index(self, delete: bool = False) -> str:
@@ -56,7 +73,7 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
 
         n_ds = 0
         n_success = 0
-        for i in range(1, 501):  # There can be up to 500 pages of datasets
+        for i in range(1, self.index_max_pages + 1):
             n_ds += 1
             res = self._kaggle_index_page(i, existing_external_sources)
             if res == "break":
@@ -142,7 +159,10 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
         ref = "REF NOT FOUND"
         try:
             ref = row["ref"]
-            command = f"kaggle datasets metadata {ref} --path ./rb_core_backend/external_sources/staging"
+            if not KAGGLE_REF_PATTERN.match(str(ref)):
+                return f"Unexpected dataset reference {ref}, skipping."
+            os.makedirs(KAGGLE_METADATA_DIR, exist_ok=True)
+            command = f"kaggle datasets metadata {ref} --path {KAGGLE_METADATA_DIR}"
             output = subprocess.check_output(command, shell=True, text=True)
         except Exception as e:
             logger.error(
@@ -151,10 +171,7 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
             return f"Unable to get the metadata for {ref} from Kaggle, skipping."
         output = self._handle_update_log(output)
         # if the output does not start with Downloaded metadata to ./staging/, return an error
-        if (
-            "Downloaded metadata to ./rb_core_backend/external_sources/staging"
-            not in output
-        ):
+        if f"Downloaded metadata to {KAGGLE_METADATA_DIR}" not in output:
             logger.error(
                 f"KAGGLE INDEX:: Error in _get_metadata - metadata is not found, maybe there is a kaggle update: {output}"  # NOQA: 501
             )  # NOQA: 501
@@ -162,7 +179,7 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
         # read dataset-metadata.json into metadata var
         try:
             metadata = json.load(
-                open("./rb_core_backend/external_sources/staging/dataset-metadata.json")
+                open(f"{KAGGLE_METADATA_DIR}/dataset-metadata.json")
             )
             if isinstance(metadata, str):
                 # if metadata is a string, it means the file is empty or not found
@@ -237,7 +254,7 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
             external_dataset["resources"].append(external_dataset_resource)
 
         # remove the file metadata_json_file
-        os.remove("./rb_core_backend/external_sources/staging/dataset-metadata.json")
+        os.remove(f"{KAGGLE_METADATA_DIR}/dataset-metadata.json")
 
         mongo_res = self.mongo_client.mongo_create_external_source(
             external_dataset, update=update
@@ -258,7 +275,10 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
         """
         # ref = url split on https://www.kaggle.com/datasets/
         logger.debug("KAGGLE:: Downloading kaggle dataset")
-        ref = external_dataset["url"].split("https://www.kaggle.com/datasets/")[1]
+        url = external_dataset.get("url", "")
+        ref = url[len(KAGGLE_DATASET_URL):] if isinstance(url, str) and url.startswith(KAGGLE_DATASET_URL) else ""
+        if not KAGGLE_REF_PATTERN.match(ref) or " - Data file: " not in external_dataset.get("name", ""):
+            return "Sorry, we were unable to find the selected Kaggle dataset, please try a different dataset."
         logger.debug("KAGGLE:: - ref: " + ref)
         file_choice = re.sub(
             RE_SUB, "", external_dataset["name"].split(" - Data file: ")[1]
@@ -272,36 +292,50 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
         if download_res == "Error":
             return "Sorry, we were unable to download the selected Kaggle dataset, please try a different dataset, or contact the administrator."  # NOQA: 501
         logger.debug("KAGGLE:: files downloaded")
-        for name in filenames:
-            logger.debug(f"KAGGLE:: Checking file: {name}")
-            cleaned_name = re.sub(RE_SUB, "", name[:-4])
-            if file_choice != cleaned_name:
-                # try to remove the file @ ./staging/{name} as it is not relevant
+        processed = False
+        try:
+            for name in filenames:
+                logger.debug(f"KAGGLE:: Checking file: {name}")
+                cleaned_name = re.sub(RE_SUB, "", name[:-4])
+                if file_choice != cleaned_name:
+                    # try to remove the file @ ./staging/{name} as it is not relevant
+                    try:
+                        logger.debug(f"KAGGLE:: Removing file: {name}")
+                        os.remove(f"./staging/{name}")
+                    except Exception:
+                        pass
+                    continue
+                file_dataset = external_dataset.copy()
+                file_dataset["name"] = file_dataset["name"] + " - " + cleaned_name
+                logger.debug(f"KAGGLE:: {file_dataset}")
+                ds_id = external_dataset.get("id", f"kaggle-{ref}")
+                ds_name = f"{ds_id}.csv"
                 try:
-                    logger.debug(f"KAGGLE:: Removing file: {name}")
-                    os.remove(f"./staging/{name}")
+                    os.rename(f"./staging/{name}", f"./staging/{ds_name}")
                 except Exception:
                     pass
-                continue
-            file_dataset = external_dataset.copy()
-            file_dataset["name"] = file_dataset["name"] + " - " + cleaned_name
-            logger.debug(f"KAGGLE:: {file_dataset}")
-            ds_id = external_dataset.get("id", f"kaggle-{ref}")
-            ds_name = f"{ds_id}.csv"
-            try:
-                os.rename(f"./staging/{name}", f"./staging/{ds_name}")
-            except Exception:
-                pass
-            try:
-                logger.debug(f"KAGGLE:: start preprocessing for {ds_name}")
-                preprocess_res = self.dataset_preprocessor.preprocess_data(
-                    ds_name, create_ds=True
-                )
-                if preprocess_res != "Success":
-                    return "Sorry, we were unable to preprocess the selected Kaggle dataset, please try a different dataset, or contact the administrator."  # NOQA: 501
-            except Exception:
-                continue
-            os.remove(f"./staging/{ds_name}")
+                try:
+                    logger.debug(f"KAGGLE:: start preprocessing for {ds_name}")
+                    preprocess_res = self.dataset_preprocessor.preprocess_data(
+                        ds_name, create_ds=True
+                    )
+                    if preprocess_res != "Success":
+                        return "Sorry, we were unable to preprocess the selected Kaggle dataset, please try a different dataset, or contact the administrator."  # NOQA: 501
+                    processed = True
+                except Exception as e:
+                    logger.error(f"KAGGLE:: Error preprocessing {ds_name}: {str(e)}")
+                    continue
+                finally:
+                    if os.path.exists(f"./staging/{ds_name}"):
+                        os.remove(f"./staging/{ds_name}")
+        finally:
+            # Kaggle unzips every file of the dataset, do not leave the others behind.
+            for name in filenames:
+                if os.path.exists(f"./staging/{name}"):
+                    os.remove(f"./staging/{name}")
+        # Without a matching, processable file there is no dataset to use.
+        if not processed:
+            return KAGGLE_DOWNLOAD_ERROR
         return "Success"
 
     def _get_filenames(
@@ -359,24 +393,25 @@ class RBCoreExternalSourceKaggle(ExternalSourceModel):
 
     @staticmethod
     def _handle_update_log(kaggle_output: str) -> str:
-        """If the Kaggle package has an update, remove the first line from kaggle_output and log it.
+        """Remove the notices the Kaggle CLI prints before its actual output, such as the request to upgrade
+        the package or the token of the next page, and log them.
 
         Args:
             kaggle_output (str): The kaggle_output from the Kaggle CLI command execution.
 
         Returns:
-            str: The kaggle_output without the first line if the warning is present.
+            str: The kaggle_output without the leading notices.
         """
         try:
-            if (
-                "Looks like you're using an outdated API Version" in kaggle_output
-                or "Next Page Token = " in kaggle_output
+            lines = kaggle_output.splitlines()
+            while lines and (
+                lines[0].startswith("Warning:")
+                or "Looks like you're using an outdated" in lines[0]
+                or "Next Page Token = " in lines[0]
             ):
-                parts = kaggle_output.partition("\n")
-                logger.info(
-                    f"KAGGLE:: _handle_update_log:: detected malformed kaggle_output: {parts[0]}"
-                )
-                return "\n".join(parts[1:]).strip()
+                logger.info(f"KAGGLE:: _handle_update_log:: skipping Kaggle CLI notice: {lines[0]}")
+                lines.pop(0)
+            return "\n".join(lines).strip()
         except Exception as e:
             logger.error(f"KAGGLE:: Error in _handle_update_log: {str(e)}")
         return kaggle_output

@@ -82,6 +82,51 @@ class RBCoreBackendMongo(ABC):
             return None
 
     @profile_method
+    def mongo_create_external_sources(self, external_sources: list[dict]) -> int | None:
+        """Connect to the MongoDB and insert multiple external source objects at once.
+
+        Args:
+            external_sources (list[dict]): The external source objects to insert.
+
+        Returns:
+            int | None: The number of inserted objects or None if the operation failed.
+        """
+        logger.info("Creating external sources in MongoDB")
+        if not external_sources:
+            return 0
+        try:
+            client = self.mongo_client()
+            db = client[self.database_name]
+            external_source_collection = db[self.fs_db_name]
+            inserted_data = external_source_collection.insert_many(external_sources, ordered=False)
+            client.close()
+            return len(inserted_data.inserted_ids)
+        except Exception as e:
+            logger.error("Error in create_external_sources: " + str(e))
+            return None
+
+    @profile_method
+    def mongo_count_external_sources(self) -> dict[str, int] | None:
+        """Connect to the MongoDB and count the resources (data files) of the external sources per source.
+
+        Returns:
+            dict[str, int] | None: The number of resources per source, or None if the operation failed.
+        """
+        try:
+            client = self.mongo_client()
+            db = client[self.database_name]
+            external_source_collection = db[self.fs_db_name]
+            pipeline = [
+                {"$group": {"_id": "$source", "count": {"$sum": {"$size": {"$ifNull": ["$resources", []]}}}}}
+            ]
+            counts = {item["_id"]: item["count"] for item in external_source_collection.aggregate(pipeline)}
+            client.close()
+            return counts
+        except Exception as e:
+            logger.error("Error in count_external_sources: " + str(e))
+            return None
+
+    @profile_method
     def mongo_get_all_external_sources(self) -> list[dict]:
         """Connect to the MongoDB and get all external source objects.
 
@@ -145,8 +190,9 @@ class RBCoreBackendMongo(ABC):
                     mongo_query, {"score": {"$meta": "textScore"}}
                 )
                 .sort(sort_style)
-                .skip(offset)
-                .limit(limit)
+                .skip(offset or 0)
+                # A limit of 0 is no limit in MongoDB, None is not accepted.
+                .limit(limit or 0)
             )
             client.close()
             return external_sources
@@ -186,8 +232,9 @@ class RBCoreBackendMongo(ABC):
                 external_source_collection.find({"source": {"$in": sources}})
                 # sort on alphabetical order
                 .sort(sort_style)
-                .skip(offset)
-                .limit(limit)
+                .skip(offset or 0)
+                # A limit of 0 is no limit in MongoDB, None is not accepted.
+                .limit(limit or 0)
             )
             client.close()
             return external_sources

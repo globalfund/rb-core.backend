@@ -5,6 +5,7 @@
     - [rb_core_backend.external\_sources](#rb_core_backendexternal_sources)
       - [rb_core_backend.external\_sources.index](#rb_core_backendexternal_sourcesindex)
       - [rb_core_backend.external\_sources.kaggle](#rb_core_backendexternal_sourceskaggle)
+      - [rb_core_backend.external\_sources.who](#rb_core_backendexternal_sourceswho)
       - [rb_core_backend.external\_sources.util](#rb_core_backendexternal_sourcesutil)
     - [rb_core_backend.data\_management](#rb_core_backenddata_management)
     - [rb_core_backend.mongo](#rb_core_backendmongo)
@@ -48,9 +49,41 @@ sources_dict = {
 }
 ```
 
+For example, with the included sources:
+
+```python
+kaggle = RBCoreExternalSourceKaggle(mongo_client, dataset_preprocessor)
+who = RBCoreExternalSourceWHO(mongo_client, dataset_preprocessor)
+external_sources = RBCoreExternalSources(
+    mongo_client,
+    {
+        "Kaggle": {"index": kaggle.index, "download": kaggle.download},
+        "WHO": {"index": who.index, "download": who.download},
+    },
+)
+```
+
+- `external_search_index` and `external_search_force_reindex` index the sources, they can only be searched afterwards.
+- `search_external_sources` searches the index. With `legacy=True` it returns one result per data file, in the form `download_external_source` expects, extended with an `id` to store the dataset under.
+- `count_external_sources` counts the indexed data files per source.
+
 #### rb_core_backend.external_sources.kaggle
 
 Contains a class `RBCoreExternalSourceKaggle` for external source data connection with Kaggle.
+
+Kaggle needs API credentials, through the `KAGGLE_USERNAME` and `KAGGLE_KEY` environment variables or `~/.kaggle/kaggle.json`.
+
+Indexing requests the metadata and files of every dataset, so all 500 pages of 20 datasets take hours. `index_max_pages` limits the index to the most voted datasets:
+
+```python
+kaggle = RBCoreExternalSourceKaggle(mongo_client, dataset_preprocessor, index_max_pages=25)
+```
+
+#### rb_core_backend.external_sources.who
+
+Contains a class `RBCoreExternalSourceWHO` for external source data connection with the [WHO Global Health Observatory](https://www.who.int/data/gho/info/gho-odata-api), where every indicator is a dataset. No credentials are required, and indexing takes a few seconds.
+
+Downloaded observations are converted to a readable table: the codes of locations and dimensions (sex, age group, ...) are replaced by their titles, and every dimension becomes its own column.
 
 #### rb_core_backend.external_sources.util
 
