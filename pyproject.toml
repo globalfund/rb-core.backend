@@ -1,6 +1,6 @@
 [project]
 name = "rb-core-backend"
-version = "0.1.1"
+version = "0.2.0"
 description = "The Global Fund - Report Builder Core - Backend"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -8,6 +8,7 @@ dependencies = [
     "chardet>=5.2.0",
     "dotenv>=0.9.9",
     "kaggle>=1.8.3",
+    "openpyxl>=3.1.5",
     "pandas<2.3.0",
     "pyarrow>=23.0.1",
     "pymongo>=4.15.3",

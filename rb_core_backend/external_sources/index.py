@@ -1,5 +1,6 @@
 import concurrent.futures
 import logging
+import re
 from abc import ABC
 
 from rb_core_backend.external_sources.util import LEGACY_EXTERNAL_DATASET_FORMAT
@@ -9,6 +10,8 @@ from rb_core_backend.util import profile_method
 logger = logging.getLogger(__name__)
 DEFAULT_SEARCH_TERM = "World population"
 DATA_FILE = " - Data file: "
+# The credit the sources append to their descriptions.
+SOURCE_NOTICE_PATTERN = re.compile(r"\s*- This Datasource was retrieved from \S+")
 
 
 class RBCoreExternalSources(ABC):
@@ -128,6 +131,18 @@ class RBCoreExternalSources(ABC):
         return res
 
     @profile_method
+    def count_external_sources(self) -> dict[str, int] | str:
+        """Count the available datasets (data files) for each of the sources.
+
+        Returns:
+            dict[str, int] | str: The number of data files per source, or a string with an error.
+        """
+        counts = self.mongo_client.mongo_count_external_sources()
+        if counts is None:
+            return "Sorry, we were unable to count the external sources."
+        return {source: counts.get(source, 0) for source in self.all_sources}
+
+    @profile_method
     def download_external_source(self, external_dataset: dict) -> str:
         """
         This process should receive an external dataset object, and download
@@ -200,6 +215,10 @@ class RBCoreExternalSources(ABC):
 
             Create a duplicate for each resource, and combine the names.
 
+        The combined name and description are what the download functions expect. For display, the separate
+        parts are included as title (dataset title), file (resource title, empty if it is the same as the
+        dataset title) and summary (dataset description, without the source credit).
+
         Args:
             all_res (list[dict]): List of all results from the search.
 
@@ -213,6 +232,9 @@ class RBCoreExternalSources(ABC):
                 new_res = LEGACY_EXTERNAL_DATASET_FORMAT.copy()
                 new_res["name"] = res.get("title")
                 new_res["description"] = res.get("description")
+                new_res["title"] = res.get("title")
+                new_res["file"] = "" if resource.get("title") == res.get("title") else resource.get("title")
+                new_res["summary"] = SOURCE_NOTICE_PATTERN.sub("", res.get("description") or "").strip()
                 if not one_file:
                     new_res["name"] += DATA_FILE + resource.get("title")
                     new_res["description"] += DATA_FILE + resource.get("title")
